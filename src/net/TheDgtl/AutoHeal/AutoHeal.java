@@ -2,12 +2,11 @@ package net.TheDgtl.AutoHeal;
 
 import java.io.File;
 import java.util.HashMap;
+import java.util.logging.Logger;
 
 import org.bukkit.ChatColor;
 import org.bukkit.Server;
 import org.bukkit.World;
-import org.bukkit.craftbukkit.CraftServer;
-import org.bukkit.craftbukkit.command.ColouredConsoleSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
 import org.bukkit.event.Event.Priority;
@@ -23,7 +22,7 @@ import com.nijikokun.bukkit.Permissions.Permissions;
 
 public class AutoHeal extends JavaPlugin {
 	private Server server;
-	private ColouredConsoleSender console;
+	private Logger log;
 	private Configuration config;
 	private PluginManager pm;
 	
@@ -38,7 +37,7 @@ public class AutoHeal extends JavaPlugin {
 	public void onEnable() {
 		server = getServer();
 		pm = server.getPluginManager();
-		console = new ColouredConsoleSender((CraftServer)server);
+		log = getServer().getLogger();
 		config = getConfiguration();
 		
 		loadConfig();
@@ -50,12 +49,12 @@ public class AutoHeal extends JavaPlugin {
 		
 		server.getScheduler().scheduleSyncRepeatingTask(this, new HealRun(), 0L, 10L);
 		
-		console.sendMessage("AutoHeal v" + getDescription().getVersion() + ChatColor.GREEN + " Enabled");
+		log.info("AutoHeal v" + getDescription().getVersion() + ChatColor.GREEN + " Enabled");
 	}
 	
 	@Override
 	public void onDisable() {
-		console.sendMessage("AutoHeal " + ChatColor.RED + "Disabled");
+		log.info("AutoHeal " + ChatColor.RED + "Disabled");
 	}
 	
 	public void loadConfig() {
@@ -117,7 +116,7 @@ public class AutoHeal extends JavaPlugin {
 				for (Player player : world.getPlayers()) {
 					if (player.getLocation().getY() < data.altitude) continue;
 					if (player.getHealth() >= data.max || player.getHealth() <= data.min) continue;
-					if (!hasPerm(player, "autoheal.heal", true)) continue;
+					if (!hasPerm(player, "autoheal.heal")) continue;
 					player.setHealth(player.getHealth() + data.amount);
 				}
 				if (data.lastHeal == 0) data.lastHeal = time;
@@ -129,11 +128,11 @@ public class AutoHeal extends JavaPlugin {
 	/*
 	 * Check whether the player has the given permissions.
 	 */
-	public boolean hasPerm(Player player, String perm, boolean def) {
+	public boolean hasPerm(Player player, String perm) {
 		if (permissions != null) {
 			return permissions.getHandler().has(player, perm);
 		} else {
-			return def;
+			return player.hasPermission(perm);
 		}
 	}
 	
@@ -147,7 +146,7 @@ public class AutoHeal extends JavaPlugin {
 	
 	private Plugin checkPlugin(Plugin plugin) {
 		if (plugin != null && plugin.isEnabled()) {
-			console.sendMessage("[AutoHeal] Found " + plugin.getDescription().getName() + " (v" + plugin.getDescription().getVersion() + ")");
+			log.info("[AutoHeal] Found " + plugin.getDescription().getName() + " (v" + plugin.getDescription().getVersion() + ")");
 			return plugin;
 		}
 		return null;
@@ -167,7 +166,7 @@ public class AutoHeal extends JavaPlugin {
 		@Override
 		public void onPluginDisable(PluginDisableEvent event) {
 			if (event.getPlugin() == permissions) {
-				console.sendMessage("[AutoHeal] Permissions plugin lost.");
+				log.info("[AutoHeal] Permissions plugin lost.");
 				permissions = null;
 			}
 		}
