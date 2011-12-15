@@ -45,11 +45,6 @@ public class AutoHeal extends JavaPlugin {
 		pm.registerEvent(Event.Type.ENTITY_REGAIN_HEALTH, eListener, Event.Priority.Normal, this);
 		pm.registerEvent(Event.Type.ENTITY_DAMAGE, eListener, Event.Priority.Normal, this);
 		
-		
-		for (Player p : server.getWorlds().get(0).getPlayers()) {
-			p.setFoodLevel(0);
-		}
-		
 		log.info("AutoHeal v" + getDescription().getVersion() + ChatColor.GREEN + " Enabled");
 	}
 	
