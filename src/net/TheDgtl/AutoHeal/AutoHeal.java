@@ -7,47 +7,48 @@ import java.util.logging.Logger;
 import org.bukkit.ChatColor;
 import org.bukkit.Server;
 import org.bukkit.World;
+import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.Event;
-import org.bukkit.event.Event.Priority;
-import org.bukkit.event.server.PluginDisableEvent;
-import org.bukkit.event.server.PluginEnableEvent;
-import org.bukkit.event.server.ServerListener;
-import org.bukkit.plugin.Plugin;
+import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityListener;
+import org.bukkit.event.entity.EntityRegainHealthEvent;
+import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
+import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.util.config.Configuration;
-
-import com.nijikokun.bukkit.Permissions.Permissions;
 
 public class AutoHeal extends JavaPlugin {
 	private Server server;
 	private Logger log;
-	private Configuration config;
-	private PluginManager pm;
-	
-	// Listeners
-	private final serverListener sListener = new serverListener();
-	
-	private Permissions permissions = null;
+	private FileConfiguration newConfig;
 	
 	private HashMap<String, WorldData> worlds = new HashMap<String, WorldData>();
 	WorldData defData = new WorldData();
+	
+	private PluginManager pm;
+	
+	// Listeners
+	private entityListener eListener = new entityListener();
+	
 	@Override
 	public void onEnable() {
 		server = getServer();
-		pm = server.getPluginManager();
 		log = getServer().getLogger();
-		config = getConfiguration();
+		newConfig = this.getConfig();
+		pm = this.getServer().getPluginManager();
 		
 		loadConfig();
-		
-		permissions = (Permissions)checkPlugin("Permissions");
-		
-		pm.registerEvent(Event.Type.PLUGIN_ENABLE, sListener, Priority.Monitor, this);
-		pm.registerEvent(Event.Type.PLUGIN_DISABLE, sListener, Priority.Monitor, this);
-		
 		server.getScheduler().scheduleSyncRepeatingTask(this, new HealRun(), 0L, 10L);
+		
+		pm.registerEvent(Event.Type.ENTITY_REGAIN_HEALTH, eListener, Event.Priority.Normal, this);
+		pm.registerEvent(Event.Type.ENTITY_DAMAGE, eListener, Event.Priority.Normal, this);
+		
+		
+		for (Player p : server.getWorlds().get(0).getPlayers()) {
+			p.setFoodLevel(0);
+		}
 		
 		log.info("AutoHeal v" + getDescription().getVersion() + ChatColor.GREEN + " Enabled");
 	}
@@ -60,9 +61,9 @@ public class AutoHeal extends JavaPlugin {
 	public void loadConfig() {
 		// Clear config
 		if (!worlds.isEmpty()) worlds.clear();
+		
 		// Load/save default config
-		loadConfig(this.config, defData);
-		config.save();
+		loadConfig(newConfig, defData);
 		
 		// Load world configs
 		for (World world : server.getWorlds()) {
@@ -74,21 +75,29 @@ public class AutoHeal extends JavaPlugin {
 		WorldData newData = new WorldData();
 		File fh = new File(this.getDataFolder().getPath() + File.separator + name);
 		if (!fh.exists()) {
-			loadConfig(config, newData);
+			loadConfig(newConfig, newData);
 		} else {
-			Configuration conf = new Configuration(fh);
-			loadConfig(conf, newData);
+			FileConfiguration conf = new YamlConfiguration();
+			try {
+				conf.load(fh);
+				loadConfig(conf, newData);
+			} catch (Exception e) {
+				e.printStackTrace();
+				log.warning("[AutoHeal] Could not load configuration for " + name + " using default.");
+				loadConfig(newConfig, newData);
+			}
 		}
 		worlds.put(name, newData);
 		return newData;
 	}
 	
-	public void loadConfig(Configuration config, WorldData data) {
+	public void loadConfig(FileConfiguration config, WorldData data) {
 		data.rate = config.getInt("rate", data.rate) * 1000;
 		data.amount = config.getInt("amount", data.amount);
 		data.max = config.getInt("max", data.max);
 		data.min = config.getInt("min", data.min);
 		data.altitude = config.getInt("altitude", data.altitude);
+		data.disableHurt = config.getBoolean("disableHurt", data.disableHurt);
 	}
 	
 	// Used to store per-world data on healing
@@ -99,6 +108,9 @@ public class AutoHeal extends JavaPlugin {
 		int max = 20;
 		int min = 0;
 		int altitude = 0;
+		int minFood = 10;
+		int maxFood = 20;
+		boolean disableHurt = true;
 	}
 	
 	// Task used for healing players
@@ -116,6 +128,7 @@ public class AutoHeal extends JavaPlugin {
 				for (Player player : world.getPlayers()) {
 					if (player.getLocation().getY() < data.altitude) continue;
 					if (player.getHealth() >= data.max || player.getHealth() <= data.min) continue;
+					if (player.getFoodLevel() > data.maxFood || player.getFoodLevel() < data.minFood) continue;
 					if (!hasPerm(player, "autoheal.heal")) continue;
 					player.setHealth(player.getHealth() + data.amount);
 				}
@@ -129,46 +142,36 @@ public class AutoHeal extends JavaPlugin {
 	 * Check whether the player has the given permissions.
 	 */
 	public boolean hasPerm(Player player, String perm) {
-		if (permissions != null) {
-			return permissions.getHandler().has(player, perm);
-		} else {
-			return player.hasPermission(perm);
-		}
+		return player.hasPermission(perm);
 	}
 	
-	/*
-	 * Check if a plugin is loaded/enabled already. Returns the plugin if so, null otherwise
-	 */
-	private Plugin checkPlugin(String p) {
-		Plugin plugin = pm.getPlugin(p);
-		return checkPlugin(plugin);
-	}
-	
-	private Plugin checkPlugin(Plugin plugin) {
-		if (plugin != null && plugin.isEnabled()) {
-			log.info("[AutoHeal] Found " + plugin.getDescription().getName() + " (v" + plugin.getDescription().getVersion() + ")");
-			return plugin;
-		}
-		return null;
-	}
-	
-	// Used for loading plugin dependencies
-	private class serverListener extends ServerListener {
+	public class entityListener extends EntityListener {
+		/**
+		 * Disable food healing, no point with AutoHeal enabled
+		 */
 		@Override
-		public void onPluginEnable(PluginEnableEvent event) {
-			if (permissions == null) {
-				if (event.getPlugin().getDescription().getName().equalsIgnoreCase("Permissions")) {
-					permissions = (Permissions)checkPlugin(event.getPlugin());
-				}
-			}
+		public void onEntityRegainHealth(EntityRegainHealthEvent event) {
+			if (event.isCancelled()) return;
+			if (!(event.getEntity() instanceof Player)) return;
+			
+			event.setCancelled(true);
 		}
 		
+		/**
+		 * Cancel starvation events if disabled on this world
+		 */
 		@Override
-		public void onPluginDisable(PluginDisableEvent event) {
-			if (event.getPlugin() == permissions) {
-				log.info("[AutoHeal] Permissions plugin lost.");
-				permissions = null;
+		public void onEntityDamage(EntityDamageEvent event) {
+			if (event.isCancelled()) return;
+			if (event.getCause() != DamageCause.STARVATION) return;
+			if (!(event.getEntity() instanceof Player)) return;
+			
+			Player p = (Player)event.getEntity();
+			WorldData data = worlds.get(p.getWorld());
+			if (data == null) {
+				data = loadConfig(p.getWorld().getName());
 			}
+			if (data.disableHurt) event.setCancelled(true);
 		}
 	}
 }
