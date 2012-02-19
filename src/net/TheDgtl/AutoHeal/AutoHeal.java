@@ -10,12 +10,11 @@ import org.bukkit.World;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
-import org.bukkit.event.Event;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
-import org.bukkit.event.entity.EntityListener;
 import org.bukkit.event.entity.EntityRegainHealthEvent;
 import org.bukkit.event.entity.EntityDamageEvent.DamageCause;
-import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -29,9 +28,6 @@ public class AutoHeal extends JavaPlugin {
 	
 	private PluginManager pm;
 	
-	// Listeners
-	private entityListener eListener = new entityListener();
-	
 	@Override
 	public void onEnable() {
 		server = getServer();
@@ -42,8 +38,7 @@ public class AutoHeal extends JavaPlugin {
 		loadConfig();
 		server.getScheduler().scheduleSyncRepeatingTask(this, new HealRun(), 0L, 10L);
 		
-		pm.registerEvent(Event.Type.ENTITY_REGAIN_HEALTH, eListener, Event.Priority.Normal, this);
-		pm.registerEvent(Event.Type.ENTITY_DAMAGE, eListener, Event.Priority.Normal, this);
+		pm.registerEvents(new entityListener(), this);
 		
 		log.info("AutoHeal v" + getDescription().getVersion() + ChatColor.GREEN + " Enabled");
 	}
@@ -140,11 +135,11 @@ public class AutoHeal extends JavaPlugin {
 		return player.hasPermission(perm);
 	}
 	
-	public class entityListener extends EntityListener {
+	public class entityListener implements Listener {
 		/**
 		 * Disable food healing, no point with AutoHeal enabled
 		 */
-		@Override
+		@EventHandler
 		public void onEntityRegainHealth(EntityRegainHealthEvent event) {
 			if (event.isCancelled()) return;
 			if (!(event.getEntity() instanceof Player)) return;
@@ -155,7 +150,7 @@ public class AutoHeal extends JavaPlugin {
 		/**
 		 * Cancel starvation events if disabled on this world
 		 */
-		@Override
+		@EventHandler
 		public void onEntityDamage(EntityDamageEvent event) {
 			if (event.isCancelled()) return;
 			if (event.getCause() != DamageCause.STARVATION) return;
