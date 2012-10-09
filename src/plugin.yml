@@ -1,6 +1,6 @@
 name: AutoHeal
 main: net.TheDgtl.AutoHeal.AutoHeal
-version: 1.1.1
+version: 1.1.2
 permissions:
   autoheal.heal:
     description: Allow this player to auto heal
